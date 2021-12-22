@@ -1,0 +1,3 @@
+[submodule "3rd/rankcpp"]
+	path = 3rd/rankcpp
+	url = https://github.com/gaxh/rankcpp.git

@@ -52,6 +52,7 @@ public:
     using KEY_TYPE = KeyType;
     using POS_TYPE = PosType;
     static constexpr int DIMENSION = Dimension;
+    static constexpr POS_TYPE POS_ZERO = (POS_TYPE)0;
 
     using AOI_EVENT_TYPE = AoiEventType<KEY_TYPE, POS_TYPE, DIMENSION>;
     using EVENT_CALLBACK = typename std::function<void(const KEY_TYPE &receiver, const KEY_TYPE &sender, const AOI_EVENT_TYPE &event)>;
@@ -80,7 +81,7 @@ private:
 public:
     AoiGroup(const POS_TYPE max_watch_range[DIMENSION]) {
         for(int i = 0; i < DIMENSION; ++i) {
-            assert((POS_TYPE)0 < max_watch_range[i]);
+            assert(POS_ZERO < max_watch_range[i]);
         }
 
         CopyPos(max_watch_range, m_max_watch_range);
@@ -114,7 +115,7 @@ public:
     }
 
     bool Enter(const KEY_TYPE &key, const POS_TYPE pos[DIMENSION], int watch_type) {
-        POS_TYPE range[DIMENSION] = { (POS_TYPE)0 };
+        POS_TYPE range[DIMENSION] = { POS_ZERO };
 
         return Enter(key, pos, watch_type, range);
     }
@@ -295,8 +296,10 @@ public:
         return true;
     }
 
-    void GetMakersInRange(const POS_TYPE pos[DIMENSION], const POS_TYPE range[DIMENSION], std::vector<KEY_TYPE> &makers) {
+    void GetMakersInRange(const POS_TYPE pos[DIMENSION], const POS_TYPE range[DIMENSION], std::vector<KEY_TYPE> &makers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0) {
         static_assert(DIMENSION > 0);
+
+        assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
 
         makers.clear();
 
@@ -304,9 +307,11 @@ public:
             constexpr int i = 0;
             POS_TYPE lower = pos[i] - range[i];
             POS_TYPE upper = pos[i] + range[i];
-            m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(lower, true, upper, true,
-                    [&makers](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
-                        makers.emplace_back(key);
+            m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(lower, false, upper, false,
+                    [&makers, excludes_sorted, excludes_size](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
+                        if(!std::binary_search(excludes_sorted, excludes_sorted + excludes_size, key)) {
+                            makers.emplace_back(key);
+                        }
                     });
             std::sort(makers.begin(), makers.end());
         }
@@ -318,7 +323,7 @@ public:
 
             POS_TYPE lower = pos[i] - range[i];
             POS_TYPE upper = pos[i] + range[i];
-            m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(lower, true, upper, true,
+            m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(lower, false, upper, false,
                     [&temp](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
                         temp.emplace_back(key);
                     });
@@ -330,8 +335,12 @@ public:
         makers.resize(makers_end - makers.begin());
     }
 
-    void GetWatchersRelatedToPos(const POS_TYPE pos[DIMENSION], std::vector<KEY_TYPE> &watchers) {
+    void GetWatchersRelatedToPos(const POS_TYPE pos[DIMENSION], std::vector<KEY_TYPE> &watchers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0) {
         static_assert(DIMENSION > 0);
+
+        if(excludes_size > 0 && !std::is_sorted(excludes_sorted, excludes_sorted + excludes_size)) {
+            excludes_size = 0;
+        }
 
         watchers.clear();
         typename std::vector<KEY_TYPE>::iterator watchers_end;
@@ -344,9 +353,11 @@ public:
             POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
             POS_TYPE lower_end = pos[i];
 
-            m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, true, lower_end, true,
-                    [&watchers](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
-                        watchers.emplace_back(key);
+            m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false,
+                    [&watchers, excludes_sorted, excludes_size](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
+                        if(!std::binary_search(excludes_sorted, excludes_sorted + excludes_size, key)) {
+                            watchers.emplace_back(key);
+                        }
                     });
             std::sort(watchers.begin(), watchers.end());
 
@@ -355,7 +366,7 @@ public:
             POS_TYPE upper_begin = pos[i];
             POS_TYPE upper_end = pos[i] + m_max_watch_range[i];
 
-            m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, true, upper_end, true,
+            m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, false, upper_end, false,
                     [&temp1](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
                         temp1.emplace_back(key);
                     });
@@ -371,7 +382,7 @@ public:
             POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
             POS_TYPE lower_end = pos[i];
 
-            m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, true, lower_end, true,
+            m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false,
                     [&temp1](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
                         temp1.emplace_back(key);
                     });
@@ -382,7 +393,7 @@ public:
             POS_TYPE upper_begin = pos[i];
             POS_TYPE upper_end = pos[i] + m_max_watch_range[i];
 
-            m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, true, upper_end, true,
+            m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, false, upper_end, false,
                     [&temp2](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
                         temp2.emplace_back(key);
                     });
@@ -495,8 +506,8 @@ private:
 
     void TrimWatchRange(POS_TYPE watch_range[DIMENSION]) {
         for(int i = 0; i < DIMENSION; ++i) {
-            if(watch_range[i] < (POS_TYPE)0) {
-                watch_range[i] = (POS_TYPE)0;
+            if(watch_range[i] < POS_ZERO) {
+                watch_range[i] = POS_ZERO;
             } else if(m_max_watch_range[i] < watch_range[i]) {
                 watch_range[i] = m_max_watch_range[i];
             }
@@ -514,7 +525,7 @@ private:
 
         std::vector<KEY_TYPE> makers;
 
-        GetMakersInRange(element.POS, element.WATCH_RANGE, makers);
+        GetMakersInRange(element.POS, element.WATCH_RANGE, makers, &key, 1); // 排除自己，不观察自己
 
         for(const KEY_TYPE &maker: makers) {
             auto iter = m_elements.find(maker);
@@ -557,7 +568,7 @@ private:
 
         std::vector<KEY_TYPE> watchers;
 
-        GetWatchersRelatedToPos(element.POS, watchers);
+        GetWatchersRelatedToPos(element.POS, watchers, &key, 1); // 排除自己，不被自己观察
 
         for(const KEY_TYPE &watcher: watchers) {
             auto iter = m_elements.find(watcher);
@@ -598,7 +609,7 @@ private:
 
         std::vector<KEY_TYPE> new_makers;
 
-        GetMakersInRange(element.POS, element.WATCH_RANGE, new_makers);
+        GetMakersInRange(element.POS, element.WATCH_RANGE, new_makers, &key, 1); // 排除自己，不观察自己
 
         std::vector<KEY_TYPE> leave_makers;
         std::vector<KEY_TYPE> keep_makers;
@@ -680,7 +691,7 @@ private:
 
         std::vector<KEY_TYPE> new_watchers;
 
-        GetWatchersRelatedToPos(element.POS, new_watchers);
+        GetWatchersRelatedToPos(element.POS, new_watchers, &key, 1); // 排除自己，不被自己观察
 
         std::vector<KEY_TYPE> leave_watchers;
         std::vector<KEY_TYPE> keep_watchers;

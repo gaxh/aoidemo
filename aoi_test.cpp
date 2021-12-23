@@ -1,5 +1,37 @@
 #include "aoi_group.h"
 #include <iostream>
+#include <time.h>
+#include <random>
+#include <unordered_map>
+
+constexpr int OP_EXIT = 0;
+constexpr int OP_ENTER = 1;
+constexpr int OP_LEAVE = 2;
+constexpr int OP_MOVE = 3;
+constexpr int OP_WATCHTYPE = 4;
+constexpr int OP_RANGE = 5;
+constexpr int OP_DUMP = 6;
+
+const char *OpRepr(int op) {
+    switch(op) {
+        case OP_EXIT:
+            return "EXIT";
+        case OP_ENTER:
+            return "ENTER";
+        case OP_LEAVE:
+            return "LEAVE";
+        case OP_MOVE:
+            return "MOVE";
+        case OP_WATCHTYPE:
+            return "WATCHTYPE";
+        case OP_RANGE:
+            return "RANGE";
+        case OP_DUMP:
+            return "DUMP";
+        default:
+            return "UNKNOWN";
+    }
+}
 
 template<typename T>
 void InputSingle(T &v, const char *hint) {
@@ -26,13 +58,13 @@ void InputArray(T v[DIMENSION], const char *hint) {
 void TestInteractive() {
     constexpr int DIMENSION = 2;
 
-    long max_watcher_range[DIMENSION];
+    long max_watch_range[DIMENSION];
 
     for(int i = 0; i < DIMENSION; ++i) {
-        max_watcher_range[i] = 20;
+        max_watch_range[i] = 20;
     }
 
-    AoiGroup<unsigned, long, DIMENSION> group(max_watcher_range);
+    AoiGroup<unsigned, long, DIMENSION> group(max_watch_range);
 
     group.SetCallback([](unsigned receiver, unsigned sender, AoiGroup<unsigned, long, DIMENSION>::AOI_EVENT_TYPE event){
                 std::cout << "* EVENT=" << AoiEventIdRepr(event.EVENT_ID) << " ";
@@ -59,13 +91,6 @@ void TestInteractive() {
 
     int op;
 
-    constexpr int OP_EXIT = 0;
-    constexpr int OP_ENTER = 1;
-    constexpr int OP_LEAVE = 2;
-    constexpr int OP_MOVE = 3;
-    constexpr int OP_WATCHTYPE = 4;
-    constexpr int OP_RANGE = 5;
-    constexpr int OP_DUMP = 6;
     bool running = true;
     unsigned id;
     int watch_type;
@@ -134,10 +159,83 @@ void TestInteractive() {
     }
 }
 
+void TestStress() {
+    constexpr int DIMENSION = 2;
+
+    long max_watch_range[DIMENSION];
+    for(int i = 0; i < DIMENSION; ++i) {
+        max_watch_range[i] = 20;
+    }
+
+    AoiGroup<unsigned, long, DIMENSION> group(max_watch_range);
+    std::mt19937 rng;
+    rng.seed(time(NULL));
+
+    constexpr long pos_max = 2000;
+    constexpr unsigned id_max = 20000;
+
+    // 插入 id_max 个元素
+    {
+        std::cout << "begin insert elements: " << id_max << "\n";
+
+        unsigned inserted = 0;
+        clock_t tbegin = clock();
+        for(unsigned id = 0; id < id_max; ++id) {
+            long pos[DIMENSION];
+            for(int i = 0; i < DIMENSION; ++i) {
+                pos[i] = (long)rng() % pos_max;
+            }
+            long watch_range[DIMENSION];
+            for(int i = 0; i < DIMENSION; ++i) {
+                watch_range[i] = ((long)rng() % max_watch_range[i]) + 1;
+            }
+            inserted += group.Enter(id, pos, 3, watch_range) ? 1 : 0;
+        }
+        clock_t tdiff = clock() - tbegin;
+
+        std::cout << "finish insert elements: " << inserted << " COST_TIME=" << (double)tdiff / CLOCKS_PER_SEC << "\n";
+    }
+
+    // 移动所有元素
+    {
+        std::cout << "begin move elements: " << id_max << "\n";
+
+        unsigned moved = 0;
+        clock_t tbegin = clock();
+        for(unsigned id = 0; id < id_max; ++id) {
+            long pos[DIMENSION];
+            for(int i = 0; i < DIMENSION; ++i) {
+                pos[i] = (long)rng() % pos_max;
+            }
+            moved += group.Move(id, pos) ? 1 : 0;
+        }
+        clock_t tdiff = clock() - tbegin;
+
+        std::cout << "finish move elements: " << moved << " COST_TIME=" << (double)tdiff / CLOCKS_PER_SEC << "\n";
+    }
+
+    // 删除所有元素
+    {
+        std::cout << "begin remove elements: " << id_max << "\n";
+
+        unsigned deleted = 0;
+        clock_t tbegin = clock();
+        for(unsigned id = 0; id < id_max; ++id) {
+            deleted += group.Leave(id) ? 1 : 0;
+        }
+        clock_t tdiff = clock() - tbegin;
+
+        std::cout << "finish remove elements: " << deleted << " COST_TIME=" << (double)tdiff / CLOCKS_PER_SEC << "\n";
+    }
+
+    std::cout << "DUMP: " << "\n";
+    std::cout << group.DumpElements() << "\n";
+    std::cout << group.DumpSlist() << "\n";
+}
 
 int main() {
-    TestInteractive();
-
+    //TestInteractive();
+    TestStress();
 
     return 0;
 }

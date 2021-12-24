@@ -7,6 +7,8 @@
 #include <functional>
 #include <algorithm>
 #include <set>
+#include <unordered_map>
+#include <unordered_set>
 
 struct AOI_EVENT_IDS {
     static constexpr int ENTER = -1;
@@ -66,10 +68,10 @@ private:
         POS_TYPE POS[DIMENSION];
         POS_TYPE WATCH_RANGE[DIMENSION];
 
-        std::set<KEY_TYPE> RELATED_WATCHERS;
-        std::set<KEY_TYPE> RELATED_MAKERS;
+        std::unordered_set<KEY_TYPE> RELATED_WATCHERS;
+        std::unordered_set<KEY_TYPE> RELATED_MAKERS;
     };
-    std::map<KEY_TYPE, ElementType> m_elements;
+    std::unordered_map<KEY_TYPE, ElementType> m_elements;
 
     struct DimensionType {
         ZeeSkiplist<KEY_TYPE, POS_TYPE> WATCHER_LOWER_LIST;
@@ -257,7 +259,7 @@ public:
 
         ElementType &element = iter->second;
 
-        std::set<KEY_TYPE> related_watchers(element.RELATED_WATCHERS);
+        std::vector<KEY_TYPE> related_watchers(element.RELATED_WATCHERS.begin(), element.RELATED_WATCHERS.end());
 
         for(const KEY_TYPE &watcher: related_watchers) {
             Callback(watcher, key, event);
@@ -298,113 +300,139 @@ public:
 
     void GetMakersInRange(const POS_TYPE pos[DIMENSION], const POS_TYPE range[DIMENSION], std::vector<KEY_TYPE> &makers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0) {
         static_assert(DIMENSION > 0);
-
+        
         assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
-
         makers.clear();
 
+        // 找到几个维度里面，落在区间内的maker数量最少的那个维度，减少后续筛选的数量
+        int target_dimension = -1;
+        unsigned long target_count = 0;
+
+        for(int i = 0; i < DIMENSION; ++i) {
+            POS_TYPE lower = pos[i] - range[i];
+            POS_TYPE upper = pos[i] + range[i];
+
+            unsigned long count = m_dimensions[i].MAKER_LIST.GetElementsCountByRangedValue(lower, false, upper, false);
+
+            if(target_dimension < 0 || count < target_count) {
+                target_dimension = i;
+                target_count = count;
+            } 
+        }
+
+        assert(target_dimension >= 0);
+
+        // 遍历维度 target_dimension，进行筛选
         {
-            constexpr int i = 0;
+            int i = target_dimension;
             POS_TYPE lower = pos[i] - range[i];
             POS_TYPE upper = pos[i] + range[i];
+
             m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(lower, false, upper, false,
-                    [&makers, excludes_sorted, excludes_size](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
-                        if(!std::binary_search(excludes_sorted, excludes_sorted + excludes_size, key)) {
-                            makers.emplace_back(key);
+                    [&makers, excludes_sorted, excludes_size, this, pos, range](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
+                        if(excludes_size && std::binary_search(excludes_sorted, excludes_sorted + excludes_size, key)) {
+                            return;
                         }
+
+                        // 检查key是否在范围内
+                        auto iter = this->m_elements.find(key);
+                        if(iter == this->m_elements.end()) {
+                            return;
+                        }
+
+                        ElementType &e = iter->second;
+
+                        for(int k = 0; k < DIMENSION; ++k) {
+                            POS_TYPE lo = pos[k] - range[k];
+                            POS_TYPE up = pos[k] + range[k];
+
+                            if( !(lo < e.POS[k]) || !(e.POS[k] < up) ) {
+                                return;
+                            }
+                        }
+
+                        makers.emplace_back(key);
+
                     });
-            std::sort(makers.begin(), makers.end());
         }
-
-        typename std::vector<KEY_TYPE>::iterator makers_end = makers.end();
-        std::vector<KEY_TYPE> temp;
-        for(int i = 1; i < DIMENSION; ++i){
-            temp.clear();
-
-            POS_TYPE lower = pos[i] - range[i];
-            POS_TYPE upper = pos[i] + range[i];
-            m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(lower, false, upper, false,
-                    [&temp](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
-                        temp.emplace_back(key);
-                    });
-            std::sort(temp.begin(), temp.end());
-
-            makers_end = std::set_intersection(makers.begin(), makers_end, temp.begin(), temp.end(), makers.begin());
-        }
-
-        makers.resize(makers_end - makers.begin());
     }
 
     void GetWatchersRelatedToPos(const POS_TYPE pos[DIMENSION], std::vector<KEY_TYPE> &watchers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0) {
         static_assert(DIMENSION > 0);
-
-        if(excludes_size > 0 && !std::is_sorted(excludes_sorted, excludes_sorted + excludes_size)) {
-            excludes_size = 0;
-        }
+        assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
 
         watchers.clear();
-        typename std::vector<KEY_TYPE>::iterator watchers_end;
-        std::vector<KEY_TYPE> temp1;
-        std::vector<KEY_TYPE> temp2;
+
+        // 找到几个维度里，落在搜索区间数量最少的维度
+        int target_dimension = -1;
+        unsigned long target_count = 0;
+        bool use_lower = true;
+
+        for(int i = 0; i < DIMENSION; ++i) {
+            POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
+            POS_TYPE lower_end = pos[i];
+
+            unsigned long count = m_dimensions[i].WATCHER_LOWER_LIST.GetElementsCountByRangedValue(lower_begin, false, lower_end, false);
+
+            if(target_dimension < 0 || count < target_count) {
+                target_dimension = i;
+                target_count = count;
+                use_lower = true;
+            }
+
+            POS_TYPE upper_begin = pos[i];
+            POS_TYPE upper_end = pos[i] + m_max_watch_range[i];
+
+            count = m_dimensions[i].WATCHER_UPPER_LIST.GetElementsCountByRangedValue(upper_begin, false, upper_end, false);
+
+            if(count < target_count) {
+                target_dimension = i;
+                target_count = count;
+                use_lower = false;
+            }
+        }
+
+        assert(target_dimension >= 0);
 
         {
-            constexpr int i = 0;
+            int i = target_dimension;
 
-            POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
-            POS_TYPE lower_end = pos[i];
+            auto cb = [&watchers, excludes_sorted, excludes_size, this, pos](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
+                if(excludes_size && std::binary_search(excludes_sorted, excludes_sorted + excludes_size, key)) {
+                    return;
+                }
 
-            m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false,
-                    [&watchers, excludes_sorted, excludes_size](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
-                        if(!std::binary_search(excludes_sorted, excludes_sorted + excludes_size, key)) {
-                            watchers.emplace_back(key);
-                        }
-                    });
-            std::sort(watchers.begin(), watchers.end());
+                // 检查key能否观察到pos
+                auto iter = this->m_elements.find(key);
+                if(iter == this->m_elements.end()) {
+                    return;
+                }
 
-            watchers_end = watchers.end();
+                ElementType &e = iter->second;
 
-            POS_TYPE upper_begin = pos[i];
-            POS_TYPE upper_end = pos[i] + m_max_watch_range[i];
+                for(int k = 0; k < DIMENSION; ++k) {
+                    POS_TYPE lower = e.POS[k] - e.WATCH_RANGE[k];
+                    POS_TYPE upper = e.POS[k] + e.WATCH_RANGE[k];
 
-            m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, false, upper_end, false,
-                    [&temp1](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
-                        temp1.emplace_back(key);
-                    });
-            std::sort(temp1.begin(), temp1.end());
+                    if( !(lower < pos[k]) ||  !(pos[k] < upper) ) {
+                        return;
+                    }
+                }
 
-            watchers_end = std::set_intersection(watchers.begin(), watchers_end, temp1.begin(), temp1.end(), watchers.begin());
+                watchers.emplace_back(key);
+            };
+
+            if(use_lower) {
+                POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
+                POS_TYPE lower_end = pos[i];
+                m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false, cb);
+            } else {
+                POS_TYPE upper_begin = pos[i];
+                POS_TYPE upper_end = pos[i] + m_max_watch_range[i];
+                m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, false, upper_end, false, cb);
+            }
         }
 
-        for(int i = 1; i < DIMENSION; ++i) {
-            temp1.clear();
-            temp2.clear();
-
-            POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
-            POS_TYPE lower_end = pos[i];
-
-            m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false,
-                    [&temp1](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
-                        temp1.emplace_back(key);
-                    });
-            std::sort(temp1.begin(), temp1.end());
-
-            typename std::vector<KEY_TYPE>::iterator temp1_end = temp1.end();
-
-            POS_TYPE upper_begin = pos[i];
-            POS_TYPE upper_end = pos[i] + m_max_watch_range[i];
-
-            m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, false, upper_end, false,
-                    [&temp2](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
-                        temp2.emplace_back(key);
-                    });
-            std::sort(temp2.begin(), temp2.end());
-
-            temp1_end = std::set_intersection(temp1.begin(), temp1_end, temp2.begin(), temp2.end(), temp1.begin());
-
-            watchers_end = std::set_intersection(watchers.begin(), watchers_end, temp1.begin(), temp1_end, watchers.begin());
-        }
-
-        watchers.resize(watchers_end - watchers.begin());
     }
 
     void BroadcastEventToWatchersByPos(POS_TYPE pos[DIMENSION], const KEY_TYPE &sender, const AOI_EVENT_TYPE &event) {
@@ -610,12 +638,15 @@ private:
         std::vector<KEY_TYPE> new_makers;
 
         GetMakersInRange(element.POS, element.WATCH_RANGE, new_makers, &key, 1); // 排除自己，不观察自己
+        std::sort(new_makers.begin(), new_makers.end());
 
+        
         std::vector<KEY_TYPE> leave_makers;
         std::vector<KEY_TYPE> keep_makers;
         std::vector<KEY_TYPE> enter_makers;
 
         std::vector<KEY_TYPE> old_makers(old_element.RELATED_MAKERS.begin(), old_element.RELATED_MAKERS.end());
+        std::sort(old_makers.begin(), old_makers.end());
 
         // new_makers和old_makers都是有序的
 
@@ -692,12 +723,14 @@ private:
         std::vector<KEY_TYPE> new_watchers;
 
         GetWatchersRelatedToPos(element.POS, new_watchers, &key, 1); // 排除自己，不被自己观察
+        std::sort(new_watchers.begin(), new_watchers.end());
 
         std::vector<KEY_TYPE> leave_watchers;
         std::vector<KEY_TYPE> keep_watchers;
         std::vector<KEY_TYPE> enter_watchers;
 
         std::vector<KEY_TYPE> old_watchers(old_element.RELATED_WATCHERS.begin(), old_element.RELATED_WATCHERS.end());
+        std::sort(old_watchers.begin(), old_watchers.end());
 
         // 这里 old_watchers 和 new_watchers 都是有序的，不需要再排序
         // 如果改动了代码，导致无序，那么需要在这里进行排序
@@ -806,7 +839,7 @@ private:
             event.EVENT_ID = AOI_EVENT_IDS::LEAVE;
             CopyPos(element.POS, event.POS);
 
-            std::set<KEY_TYPE> watchers(element.RELATED_WATCHERS);
+            std::vector<KEY_TYPE> watchers(element.RELATED_WATCHERS.begin(), element.RELATED_WATCHERS.end());
             element.RELATED_WATCHERS.clear();
 
             for(const KEY_TYPE &watcher: watchers) {

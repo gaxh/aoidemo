@@ -80,6 +80,17 @@ private:
     };
     DimensionType m_dimensions[DIMENSION];
 
+    struct GetMakersInRangeHint {
+        int TARGET_DIMENSION;
+        unsigned long COMPLEXITY;
+    };
+
+    struct GetWatchersRelatedToPosHint {
+        int TARGET_DIMENSION;
+        unsigned long COMPLEXITY;
+        bool USE_LOWER;
+    };
+
 public:
     AoiGroup(const POS_TYPE max_watch_range[DIMENSION]) {
         for(int i = 0; i < DIMENSION; ++i) {
@@ -298,15 +309,9 @@ public:
         return true;
     }
 
-    void GetMakersInRange(const POS_TYPE pos[DIMENSION], const POS_TYPE range[DIMENSION], std::vector<KEY_TYPE> &makers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0) {
-        static_assert(DIMENSION > 0);
-        
-        assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
-        makers.clear();
-
-        // 找到几个维度里面，落在区间内的maker数量最少的那个维度，减少后续筛选的数量
-        int target_dimension = -1;
-        unsigned long target_count = 0;
+    void CalcGetMakersInRangeHint(const POS_TYPE pos[DIMENSION], const POS_TYPE range[DIMENSION], GetMakersInRangeHint &hint) {
+        hint.TARGET_DIMENSION = -1;
+        hint.COMPLEXITY = 0;
 
         for(int i = 0; i < DIMENSION; ++i) {
             POS_TYPE lower = pos[i] - range[i];
@@ -314,17 +319,30 @@ public:
 
             unsigned long count = m_dimensions[i].MAKER_LIST.GetElementsCountByRangedValue(lower, false, upper, false);
 
-            if(target_dimension < 0 || count < target_count) {
-                target_dimension = i;
-                target_count = count;
-            } 
+            if(hint.TARGET_DIMENSION < 0 || count < hint.COMPLEXITY) {
+                hint.TARGET_DIMENSION = i;
+                hint.COMPLEXITY = count;
+            }
+        }
+    }
+
+    void GetMakersInRange(const POS_TYPE pos[DIMENSION], const POS_TYPE range[DIMENSION], std::vector<KEY_TYPE> &makers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0, const GetMakersInRangeHint *hint = NULL) {
+        static_assert(DIMENSION > 0);
+        assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
+        makers.clear();
+
+        // 找到几个维度里面，落在区间内的maker数量最少的那个维度，减少后续筛选的数量
+        GetMakersInRangeHint h;
+        if(!hint) {
+            CalcGetMakersInRangeHint(pos, range, h);
+            hint = &h;
         }
 
-        assert(target_dimension >= 0);
+        assert(hint->TARGET_DIMENSION >= 0);
 
         // 遍历维度 target_dimension，进行筛选
         {
-            int i = target_dimension;
+            int i = hint->TARGET_DIMENSION;
             POS_TYPE lower = pos[i] - range[i];
             POS_TYPE upper = pos[i] + range[i];
 
@@ -357,16 +375,10 @@ public:
         }
     }
 
-    void GetWatchersRelatedToPos(const POS_TYPE pos[DIMENSION], std::vector<KEY_TYPE> &watchers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0) {
-        static_assert(DIMENSION > 0);
-        assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
-
-        watchers.clear();
-
-        // 找到几个维度里，落在搜索区间数量最少的维度
-        int target_dimension = -1;
-        unsigned long target_count = 0;
-        bool use_lower = true;
+    void CalcGetWatchersRelatedToPosHint(const POS_TYPE pos[DIMENSION], GetWatchersRelatedToPosHint &hint) {
+        hint.TARGET_DIMENSION = -1;
+        hint.COMPLEXITY = 0;
+        hint.USE_LOWER = true;
 
         for(int i = 0; i < DIMENSION; ++i) {
             POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
@@ -374,10 +386,10 @@ public:
 
             unsigned long count = m_dimensions[i].WATCHER_LOWER_LIST.GetElementsCountByRangedValue(lower_begin, false, lower_end, false);
 
-            if(target_dimension < 0 || count < target_count) {
-                target_dimension = i;
-                target_count = count;
-                use_lower = true;
+            if(hint.TARGET_DIMENSION < 0 || count < hint.COMPLEXITY) {
+                hint.TARGET_DIMENSION = i;
+                hint.COMPLEXITY = count;
+                hint.USE_LOWER = true;
             }
 
             POS_TYPE upper_begin = pos[i];
@@ -385,17 +397,30 @@ public:
 
             count = m_dimensions[i].WATCHER_UPPER_LIST.GetElementsCountByRangedValue(upper_begin, false, upper_end, false);
 
-            if(count < target_count) {
-                target_dimension = i;
-                target_count = count;
-                use_lower = false;
+            if(count < hint.COMPLEXITY) {
+                hint.TARGET_DIMENSION = i;
+                hint.COMPLEXITY = count;
+                hint.USE_LOWER = false;
             }
         }
+    }
 
-        assert(target_dimension >= 0);
+    void GetWatchersRelatedToPos(const POS_TYPE pos[DIMENSION], std::vector<KEY_TYPE> &watchers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0, const GetWatchersRelatedToPosHint *hint = NULL) {
+        static_assert(DIMENSION > 0);
+        assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
+        watchers.clear();
+
+        // 找到几个维度里，落在搜索区间数量最少的维度
+        GetWatchersRelatedToPosHint h;
+        if(!hint) {
+            CalcGetWatchersRelatedToPosHint(pos, h);
+            hint = &h;
+        }
+
+        assert(hint->TARGET_DIMENSION >= 0);
 
         {
-            int i = target_dimension;
+            int i = hint->TARGET_DIMENSION;
 
             auto cb = [&watchers, excludes_sorted, excludes_size, this, pos](unsigned long _0, const KEY_TYPE &key, const POS_TYPE &_1) {
                 if(excludes_size && std::binary_search(excludes_sorted, excludes_sorted + excludes_size, key)) {
@@ -422,7 +447,7 @@ public:
                 watchers.emplace_back(key);
             };
 
-            if(use_lower) {
+            if(hint->USE_LOWER) {
                 POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
                 POS_TYPE lower_end = pos[i];
                 m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false, cb);
@@ -623,7 +648,7 @@ private:
         }
     }
 
-    void UpdateWatcher(const KEY_TYPE &key, ElementType &element, const ElementType &old_element) {
+    void UpdateWatcher(const KEY_TYPE &key, ElementType &element, const ElementType &old_element, const GetMakersInRangeHint *hint = NULL) {
         for(int i = 0; i < DIMENSION; ++i) {
             POS_TYPE lower = element.POS[i] - element.WATCH_RANGE[i];
             POS_TYPE upper = element.POS[i] + element.WATCH_RANGE[i];
@@ -637,7 +662,7 @@ private:
 
         std::vector<KEY_TYPE> new_makers;
 
-        GetMakersInRange(element.POS, element.WATCH_RANGE, new_makers, &key, 1); // 排除自己，不观察自己
+        GetMakersInRange(element.POS, element.WATCH_RANGE, new_makers, &key, 1, hint); // 排除自己，不观察自己
         std::sort(new_makers.begin(), new_makers.end());
 
         
@@ -715,14 +740,14 @@ private:
         }
     }
 
-    void UpdateMaker(const KEY_TYPE &key, ElementType &element, const ElementType &old_element) {
+    void UpdateMaker(const KEY_TYPE &key, ElementType &element, const ElementType &old_element, const GetWatchersRelatedToPosHint *hint = NULL) {
         for(int i = 0; i < DIMENSION; ++i) {
             m_dimensions[i].MAKER_LIST.Update(key, old_element.POS[i], element.POS[i]);
         }
 
         std::vector<KEY_TYPE> new_watchers;
 
-        GetWatchersRelatedToPos(element.POS, new_watchers, &key, 1); // 排除自己，不被自己观察
+        GetWatchersRelatedToPos(element.POS, new_watchers, &key, 1, hint); // 排除自己，不被自己观察
         std::sort(new_watchers.begin(), new_watchers.end());
 
         std::vector<KEY_TYPE> leave_watchers;

@@ -172,7 +172,7 @@ void TestStress() {
     rng.seed(time(NULL));
 
     constexpr long pos_max = 2000;
-    constexpr unsigned id_max = 20000;
+    constexpr unsigned id_max = 10000;
 
     // 插入 id_max 个元素
     {
@@ -212,6 +212,24 @@ void TestStress() {
         clock_t tdiff = clock() - tbegin;
 
         std::cout << "finish move elements: " << moved << " COST_TIME=" << (double)tdiff / CLOCKS_PER_SEC << "\n";
+    }
+
+    // 小幅移动所有元素
+    {
+        std::cout << "begin shift elements: " << id_max << "\n";
+
+        unsigned shifted = 0;
+        clock_t tbegin = clock();
+        for(unsigned id = 0; id < id_max; ++id) {
+            long diff[DIMENSION];
+            for(int i = 0; i < DIMENSION; ++i) {
+                diff[i] = (long)rng() % 2;
+            }
+            shifted += group.MoveDiff(id, diff);
+        }
+        clock_t tdiff = clock() - tbegin;
+
+        std::cout << "finish shift elements: " << shifted << " COST_TIME=" << (double)tdiff / CLOCKS_PER_SEC << "\n";
     }
 
     // 删除所有元素

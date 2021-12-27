@@ -161,6 +161,7 @@ void TestInteractive() {
 
 void TestStress() {
     constexpr int DIMENSION = 2;
+    constexpr bool TEST_SELF = true;
 
     long max_watch_range[DIMENSION];
     for(int i = 0; i < DIMENSION; ++i) {
@@ -172,7 +173,7 @@ void TestStress() {
     rng.seed(time(NULL));
 
     constexpr long pos_max = 2000;
-    constexpr unsigned id_max = 10000;
+    constexpr unsigned id_max = 20000;
 
     // 插入 id_max 个元素
     {
@@ -190,6 +191,11 @@ void TestStress() {
                 watch_range[i] = ((long)rng() % max_watch_range[i]) + 1;
             }
             inserted += group.Enter(id, pos, 3, watch_range) ? 1 : 0;
+
+            if(TEST_SELF && !group.TestSelf()) {
+                std::cout << "WARNING: TEST SELF FAILED" << "\n";
+                break;
+            }
         }
         clock_t tdiff = clock() - tbegin;
 
@@ -208,6 +214,11 @@ void TestStress() {
                 pos[i] = (long)rng() % pos_max;
             }
             moved += group.Move(id, pos) ? 1 : 0;
+
+            if(TEST_SELF && !group.TestSelf()) {
+                std::cout << "WARNING: TEST SELF FAILED" << "\n";
+                break;
+            }
         }
         clock_t tdiff = clock() - tbegin;
 
@@ -226,6 +237,11 @@ void TestStress() {
                 diff[i] = (long)rng() % 2;
             }
             shifted += group.MoveDiff(id, diff);
+
+            if(TEST_SELF && !group.TestSelf()) {
+                std::cout << "WARNING: TEST SELF FAILED" << "\n";
+                break;
+            }
         }
         clock_t tdiff = clock() - tbegin;
 
@@ -240,20 +256,59 @@ void TestStress() {
         clock_t tbegin = clock();
         for(unsigned id = 0; id < id_max; ++id) {
             deleted += group.Leave(id) ? 1 : 0;
+
+            if(TEST_SELF && !group.TestSelf()) {
+                std::cout << "WARNING: TEST SELF FAILED" << "\n";
+                break;
+            }
         }
         clock_t tdiff = clock() - tbegin;
 
         std::cout << "finish remove elements: " << deleted << " COST_TIME=" << (double)tdiff / CLOCKS_PER_SEC << "\n";
     }
 
+    /*
     std::cout << "DUMP: " << "\n";
     std::cout << group.DumpElements() << "\n";
     std::cout << group.DumpSlist() << "\n";
+    */
+}
+
+void TestDebug() {
+    constexpr int DIMENSION = 1;
+
+    long max_watch_range[DIMENSION];
+    for(int i = 0; i < DIMENSION; ++i) {
+        max_watch_range[i] = 20;
+    }
+
+    AoiGroup<unsigned, long, DIMENSION> group(max_watch_range);
+    std::mt19937 rng;
+    rng.seed(time(NULL));
+
+    long pos, watch_range;
+
+    pos = -10, watch_range = 14;
+    group.Enter(0, &pos, 3, &watch_range);
+    group.TestSelf();
+
+    pos = -71,  watch_range = 0;
+    group.Enter(1, &pos, 3, &watch_range);
+    group.TestSelf();
+
+    pos = 85, watch_range = 6;
+    group.Enter(2, &pos, 3, &watch_range);
+    group.TestSelf();
+
+    pos = 0, watch_range = 3;
+    group.Enter(3, &pos, 3, &watch_range);
+    group.TestSelf();
 }
 
 int main() {
     //TestInteractive();
     TestStress();
+    //TestDebug();
 
     return 0;
 }

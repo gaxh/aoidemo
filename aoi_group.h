@@ -574,6 +574,51 @@ public:
         return ss.str();
     }
 
+    bool TestSelf() {
+        for(auto iter = m_elements.begin(); iter != m_elements.end(); ++iter) {
+            const KEY_TYPE &key = iter->first;
+            const ElementType &e = iter->second;
+
+            if(e.WATCH_TYPE & AOI_WATCH_TYPES::WATCHER) {
+                std::vector<KEY_TYPE> makerlist;
+                GetMakersInRange(e.POS, e.WATCH_RANGE, makerlist, &key, 1);
+
+                std::vector<KEY_TYPE> stored_makerlist(e.RELATED_MAKERS.begin(), e.RELATED_MAKERS.end());
+
+                std::sort(makerlist.begin(), makerlist.end());
+                std::sort(stored_makerlist.begin(), stored_makerlist.end());
+
+                if(makerlist.size() != stored_makerlist.size()) {
+                    return false;
+                }
+
+                if(!std::equal(makerlist.begin(), makerlist.end(), stored_makerlist.begin())) {
+                    return false;
+                }
+            }
+
+            if(e.WATCH_TYPE & AOI_WATCH_TYPES::MAKER) {
+                std::vector<KEY_TYPE> watcherlist;
+                GetWatchersRelatedToPos(e.POS, watcherlist, &key, 1);
+
+                std::vector<KEY_TYPE> stored_watcherlist(e.RELATED_WATCHERS.begin(), e.RELATED_WATCHERS.end());
+
+                std::sort(watcherlist.begin(), watcherlist.end());
+                std::sort(stored_watcherlist.begin(), stored_watcherlist.end());
+
+                if(watcherlist.size() != stored_watcherlist.size()) {
+                    return false;
+                }
+
+                if(!std::equal(watcherlist.begin(), watcherlist.end(), stored_watcherlist.begin())) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
 private:
     void Callback(const KEY_TYPE &receiver, const KEY_TYPE &sender, const AOI_EVENT_TYPE &event) {
         if(m_eventcb) {

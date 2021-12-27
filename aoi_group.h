@@ -413,7 +413,7 @@ public:
         hint.USE_LOWER = true;
 
         for(int i = 0; i < DIMENSION; ++i) {
-            POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
+            POS_TYPE lower_begin = pos[i] - m_max_watch_range[i] - m_max_watch_range[i];
             POS_TYPE lower_end = pos[i];
 
             unsigned long count = m_dimensions[i].WATCHER_LOWER_LIST.GetElementsCountByRangedValue(lower_begin, false, lower_end, false);
@@ -425,7 +425,7 @@ public:
             }
 
             POS_TYPE upper_begin = pos[i];
-            POS_TYPE upper_end = pos[i] + m_max_watch_range[i];
+            POS_TYPE upper_end = pos[i] + m_max_watch_range[i] + m_max_watch_range[i];
 
             count = m_dimensions[i].WATCHER_UPPER_LIST.GetElementsCountByRangedValue(upper_begin, false, upper_end, false);
 
@@ -480,12 +480,12 @@ public:
             };
 
             if(hint->USE_LOWER) {
-                POS_TYPE lower_begin = pos[i] - m_max_watch_range[i];
+                POS_TYPE lower_begin = pos[i] - m_max_watch_range[i] - m_max_watch_range[i];
                 POS_TYPE lower_end = pos[i];
                 m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false, cb);
             } else {
                 POS_TYPE upper_begin = pos[i];
-                POS_TYPE upper_end = pos[i] + m_max_watch_range[i];
+                POS_TYPE upper_end = pos[i] + m_max_watch_range[i] + m_max_watch_range[i];
                 m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, false, upper_end, false, cb);
             }
         }
@@ -1321,7 +1321,7 @@ private:
                         }
                     }
                 } else {
-                    POS_TYPE lower_begin = old_element.POS[i] - m_max_watch_range[i];
+                    POS_TYPE lower_begin = old_element.POS[i] - m_max_watch_range[i] - m_max_watch_range[i];
                     POS_TYPE lower_end = old_element.POS[i];
 
                     unsigned long count = m_dimensions[i].WATCHER_LOWER_LIST.GetElementsCountByRangedValue(lower_begin, false, lower_end, false);
@@ -1333,7 +1333,7 @@ private:
                     }
 
                     POS_TYPE upper_begin = old_element.POS[i];
-                    POS_TYPE upper_end = old_element.POS[i] + m_max_watch_range[i];
+                    POS_TYPE upper_end = old_element.POS[i] + m_max_watch_range[i] + m_max_watch_range[i];
 
                     count = m_dimensions[i].WATCHER_UPPER_LIST.GetElementsCountByRangedValue(upper_begin, false, upper_end, false);
 
@@ -1371,7 +1371,7 @@ private:
                         }
                     }
                 } else {
-                    POS_TYPE lower_begin = element.POS[i] - m_max_watch_range[i];
+                    POS_TYPE lower_begin = element.POS[i] - m_max_watch_range[i] - m_max_watch_range[i];
                     POS_TYPE lower_end = element.POS[i];
 
                     unsigned long count = m_dimensions[i].WATCHER_LOWER_LIST.GetElementsCountByRangedValue(lower_begin, false, lower_end, false);
@@ -1383,7 +1383,7 @@ private:
                     }
 
                     POS_TYPE upper_begin = element.POS[i];
-                    POS_TYPE upper_end = element.POS[i] + m_max_watch_range[i];
+                    POS_TYPE upper_end = element.POS[i] + m_max_watch_range[i] + m_max_watch_range[i];
 
                     count = m_dimensions[i].WATCHER_UPPER_LIST.GetElementsCountByRangedValue(upper_begin, false, upper_end, false);
 
@@ -1488,13 +1488,13 @@ private:
                 }
             } else {
                 if(leave_use_lower) {
-                    POS_TYPE lower_begin = old_element.POS[i] - m_max_watch_range[i];
+                    POS_TYPE lower_begin = old_element.POS[i] - m_max_watch_range[i] - m_max_watch_range[i];
                     POS_TYPE lower_end = old_element.POS[i];
 
                     m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false, leave_cb);
                 } else {
                     POS_TYPE upper_begin = old_element.POS[i];
-                    POS_TYPE upper_end = old_element.POS[i] + m_max_watch_range[i];
+                    POS_TYPE upper_end = old_element.POS[i] + m_max_watch_range[i] + m_max_watch_range[i];
 
                     m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, false, upper_end, false, leave_cb);
                 }
@@ -1549,13 +1549,13 @@ private:
                 
             } else {
                 if(enter_use_lower) {
-                    POS_TYPE lower_begin = element.POS[i] - m_max_watch_range[i];
+                    POS_TYPE lower_begin = element.POS[i] - m_max_watch_range[i] - m_max_watch_range[i];
                     POS_TYPE lower_end = element.POS[i];
 
                     m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(lower_begin, false, lower_end, false, enter_cb);
                 } else {
                     POS_TYPE upper_begin = element.POS[i];
-                    POS_TYPE upper_end = element.POS[i] + m_max_watch_range[i];
+                    POS_TYPE upper_end = element.POS[i] + m_max_watch_range[i] + m_max_watch_range[i];
 
                     m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(upper_begin, false, upper_end, false, enter_cb);
                 }

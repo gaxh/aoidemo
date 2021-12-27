@@ -91,6 +91,16 @@ private:
         bool USE_LOWER;
     };
 
+    struct MoveWatcherHint {
+        int LEAVE_DIMENSION[DIMENSION];
+        int ENTER_DIMENSION[DIMENSION];
+        unsigned long COMPLEXITY;
+    };
+
+    struct MoveMakerHint {
+        // TODO
+    };
+
 public:
     AoiGroup(const POS_TYPE max_watch_range[DIMENSION]) {
         for(int i = 0; i < DIMENSION; ++i) {
@@ -173,11 +183,11 @@ public:
 
         int watch_type = element.WATCH_TYPE;
         if(watch_type & AOI_WATCH_TYPES::MAKER) {
-            UpdateMaker(key, element, old_element);
+            MoveMaker(key, element, old_element);
         }
 
         if(watch_type & AOI_WATCH_TYPES::WATCHER) {
-            UpdateWatcher(key, element, old_element);
+            MoveWatcher(key, element, old_element);
         }
 
         return true;
@@ -872,6 +882,351 @@ private:
                 Callback(watcher, key, event);
             }
         }
+    }
+
+    void CalcMoveWatcherHint(ElementType &element, const ElementType &old_element, MoveWatcherHint &hint) {
+        static_assert(DIMENSION > 0);
+
+        // 不同维度各自计算，最后相加
+        hint.COMPLEXITY = 0;
+
+        for(int d = 0; d < DIMENSION; ++d) {
+            
+            // LEAVE
+            int leave_dimension = -1;
+            unsigned long leave_complixity = 0;
+            for(int i = 0; i < DIMENSION; ++i) {
+                if(i == d) {
+                    if(old_element.POS[i] < element.POS[i]) {
+                        POS_TYPE old_edge = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                        POS_TYPE new_edge = element.POS[i] - element.WATCH_RANGE[i];
+
+                        // old_edge should <= new_edge
+
+                        unsigned long count = m_dimensions[i].MAKER_LIST.GetElementsCountByRangedValue(old_edge, false, new_edge, true);
+
+                        if(leave_dimension < 0 || count < leave_complixity) {
+                            leave_dimension = i;
+                            leave_complixity = count;
+                        }
+
+                    } else {
+                        POS_TYPE old_edge = old_element.POS[i] + old_element.WATCH_RANGE[i];
+                        POS_TYPE new_edge = element.POS[i] + element.WATCH_RANGE[i];
+
+                        // new_edge should <= old_edge
+                        unsigned long count = m_dimensions[i].MAKER_LIST.GetElementsCountByRangedValue(new_edge, true, old_edge, false);
+
+                        if(leave_dimension < 0 || count < leave_complixity) {
+                            leave_dimension = i;
+                            leave_complixity = count;
+                        }
+                    }
+                } else {
+                    POS_TYPE lower = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                    POS_TYPE upper = old_element.POS[i] + old_element.WATCH_RANGE[i];
+                    unsigned long count = m_dimensions[i].MAKER_LIST.GetElementsCountByRangedValue(lower, false, upper, false);
+
+                    if(leave_dimension < 0 || count < leave_complixity) {
+                        leave_dimension = i;
+                        leave_complixity = count;
+                    }
+                }
+            }
+
+            hint.LEAVE_DIMENSION[d] = leave_dimension;
+            hint.COMPLEXITY += leave_complixity;
+            
+            // ENTER
+            int enter_dimension = -1;
+            unsigned long enter_complexity = 0;
+            for(int i = 0; i < DIMENSION; ++i) {
+                if(i == d) {
+                    if(old_element.POS[i] < element.POS[i]) {
+                        POS_TYPE old_edge = old_element.POS[i] + old_element.WATCH_RANGE[i];
+                        POS_TYPE new_edge = element.POS[i] + element.WATCH_RANGE[i];
+
+                        unsigned long count = m_dimensions[i].MAKER_LIST.GetElementsCountByRangedValue(old_edge, true, new_edge, false);
+
+                        if(enter_dimension < 0 || count < enter_complexity) {
+                            enter_dimension = i;
+                            enter_complexity = count;
+                        }
+                    } else {
+                        POS_TYPE old_edge = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                        POS_TYPE new_edge = element.POS[i] - element.WATCH_RANGE[i];
+
+                        unsigned long count = m_dimensions[i].MAKER_LIST.GetElementsCountByRangedValue(new_edge, false, old_edge, true);
+
+                        if(enter_dimension < 0 || count < enter_complexity) {
+                            enter_dimension = i;
+                            enter_complexity = count;
+                        }
+                    }
+                } else {
+                    POS_TYPE lower = element.POS[i] - element.WATCH_RANGE[i];
+                    POS_TYPE upper = element.POS[i] + element.WATCH_RANGE[i];
+
+                    unsigned long count = m_dimensions[i].MAKER_LIST.GetElementsCountByRangedValue(lower, false, upper, false);
+
+                    if(enter_dimension < 0 || count < enter_complexity) {
+                        enter_dimension = i;
+                        enter_complexity = count;
+                    }
+                }
+            }
+
+            hint.ENTER_DIMENSION[d] = enter_dimension;
+            hint.COMPLEXITY += enter_complexity;
+        }
+
+    }
+
+    void MoveWatcher(const KEY_TYPE &key, ElementType &element, const ElementType &old_element) {
+        for(int i = 0; i < DIMENSION; ++i) {
+            POS_TYPE diff = element.POS[i] < old_element.POS[i] ? old_element.POS[i] - element.POS[i] :
+                element.POS[i] - old_element.POS[i];
+
+            if(diff >= element.WATCH_RANGE[i] + old_element.WATCH_RANGE[i]) {
+                UpdateWatcher(key, element, old_element);
+                return;
+            }
+        }
+
+        GetMakersInRangeHint update_hint;
+        CalcGetMakersInRangeHint(element.POS, element.WATCH_RANGE, update_hint);
+
+        MoveWatcherHint move_hint;
+        CalcMoveWatcherHint(element, old_element, move_hint);
+
+        if(update_hint.COMPLEXITY < move_hint.COMPLEXITY) {
+            UpdateWatcher(key, element, old_element, &update_hint);
+        } else {
+            ShiftWatcher(key, element, old_element, &move_hint);
+        }
+    }
+
+    void ShiftWatcher(const KEY_TYPE &key, ElementType &element, const ElementType &old_element, MoveWatcherHint *hint) {
+        for(int i = 0; i < DIMENSION; ++i) {
+            POS_TYPE lower = element.POS[i] - element.WATCH_RANGE[i];
+            POS_TYPE upper = element.POS[i] + element.WATCH_RANGE[i];
+
+            POS_TYPE old_lower = old_element.POS[i] - old_element.WATCH_RANGE[i];
+            POS_TYPE old_upper = old_element.POS[i] + old_element.WATCH_RANGE[i];
+
+            m_dimensions[i].WATCHER_LOWER_LIST.Update(key, old_lower, lower);
+            m_dimensions[i].WATCHER_UPPER_LIST.Update(key, old_upper, upper);
+        }
+
+        std::vector<KEY_TYPE> leave_makers;
+        std::vector<KEY_TYPE> keep_makers;
+        std::vector<KEY_TYPE> enter_makers;
+
+        for(int i = 0; i < DIMENSION; ++i) {
+            // LEAVE
+            int leave_dimension = hint->LEAVE_DIMENSION[i];
+            assert(leave_dimension >= 0);
+
+            auto leave_cb = [&leave_makers, this, key, &old_element, &element, leave_dimension](unsigned long _0, const KEY_TYPE &k, const POS_TYPE &_1) {
+                if(k == key) {
+                    return;
+                }
+
+                auto iter = this->m_elements.find(k);
+
+                if(iter == this->m_elements.end()) {
+                    return;
+                }
+
+                ElementType &e = iter->second;
+
+                for(int i = 0; i < DIMENSION; ++i) {
+                    if(i == leave_dimension) {
+                        if(old_element.POS[i] < element.POS[i]) {
+                            POS_TYPE old_edge = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                            POS_TYPE new_edge = element.POS[i] - element.WATCH_RANGE[i];
+
+                            if(!(old_edge < e.POS[i]) || new_edge < e.POS[i]) {
+                                return;
+                            }
+                        } else {
+                            POS_TYPE old_edge = old_element.POS[i] + old_element.WATCH_RANGE[i];
+                            POS_TYPE new_edge = element.POS[i] + element.WATCH_RANGE[i];
+
+                            if(e.POS[i] < new_edge || !(e.POS[i] < old_edge)) {
+                                return;
+                            }
+                        }
+                    } else {
+                        POS_TYPE lower = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                        POS_TYPE upper = old_element.POS[i] + old_element.WATCH_RANGE[i];
+
+                        if(!(lower < e.POS[i]) || !(e.POS[i] < upper)) {
+                            return;
+                        }
+                    }
+                }
+
+                leave_makers.emplace_back(k);
+            };
+
+            if(leave_dimension == i) {
+                if(old_element.POS[i] < element.POS[i]) {
+                    POS_TYPE old_edge = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                    POS_TYPE new_edge = element.POS[i] - element.WATCH_RANGE[i];
+
+                    m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(old_edge, false, new_edge, true, leave_cb);
+                } else {
+                    POS_TYPE old_edge = old_element.POS[i] + old_element.WATCH_RANGE[i];
+                    POS_TYPE new_edge = element.POS[i] + element.WATCH_RANGE[i];
+
+                    m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(new_edge, true, old_edge, false, leave_cb);
+                }
+            } else {
+                POS_TYPE lower = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                POS_TYPE upper = old_element.POS[i] + old_element.WATCH_RANGE[i];
+
+                m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(lower, false, upper, false, leave_cb);
+            }
+
+            // ENTER
+            int enter_dimension = hint->ENTER_DIMENSION[i];
+            assert(enter_dimension >= 0);
+
+            auto enter_cb = [&enter_makers, this, key, &old_element, &element, enter_dimension](unsigned long _0, const KEY_TYPE &k, const POS_TYPE &_1) {
+                if(k == key) {
+                    return;
+                }
+
+                auto iter = this->m_elements.find(k);
+
+                if(iter == this->m_elements.end()) {
+                    return;
+                }
+
+                ElementType &e = iter->second;
+
+                for(int i = 0; i < DIMENSION; ++i) {
+                    if(i == enter_dimension) {
+                        if(old_element.POS[i] < element.POS[i]) {
+                            POS_TYPE old_edge = old_element.POS[i] + old_element.WATCH_RANGE[i];
+                            POS_TYPE new_edge = element.POS[i] + element.WATCH_RANGE[i];
+
+                            if(e.POS[i] < old_edge || !(e.POS[i] < new_edge)) {
+                                return;
+                            }
+                        } else {
+                            POS_TYPE old_edge = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                            POS_TYPE new_edge = element.POS[i] - element.WATCH_RANGE[i];
+
+                            if(!(new_edge < e.POS[i]) || old_edge < e.POS[i]) {
+                                return;
+                            }
+                        }
+                    } else {
+                        POS_TYPE lower = element.POS[i] - element.WATCH_RANGE[i];
+                        POS_TYPE upper = element.POS[i] + element.WATCH_RANGE[i];
+
+                        if(!(lower < e.POS[i]) || !(e.POS[i] < upper)) {
+                            return;
+                        }
+                    }
+                }
+
+                enter_makers.emplace_back(k);
+            };
+
+            if(enter_dimension == i) {
+                if(old_element.POS[i] < element.POS[i]) {
+                        POS_TYPE old_edge = old_element.POS[i] + old_element.WATCH_RANGE[i];
+                        POS_TYPE new_edge = element.POS[i] + element.WATCH_RANGE[i];
+
+                        m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(old_edge, true, new_edge, false, enter_cb);
+                    } else {
+                        POS_TYPE old_edge = old_element.POS[i] - old_element.WATCH_RANGE[i];
+                        POS_TYPE new_edge = element.POS[i] - element.WATCH_RANGE[i];
+
+                        m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(new_edge, false, old_edge, true, enter_cb);
+                    }
+            } else {
+                POS_TYPE lower = element.POS[i] - element.WATCH_RANGE[i];
+                POS_TYPE upper = element.POS[i] + element.WATCH_RANGE[i];
+
+                m_dimensions[i].MAKER_LIST.GetElementsByRangedValue(lower, false, upper, false, enter_cb);
+            }
+        }
+
+        std::sort(leave_makers.begin(), leave_makers.end());
+        std::sort(enter_makers.begin(), enter_makers.end());
+
+        auto leave_makers_end = std::unique(leave_makers.begin(), leave_makers.end());
+        auto enter_makers_end = std::unique(enter_makers.begin(), enter_makers.end());
+
+        leave_makers.resize(leave_makers_end - leave_makers.begin());
+        enter_makers.resize(enter_makers_end - enter_makers.begin());
+
+        // 已经得到进入、离开的makers
+
+        for(const KEY_TYPE &maker: leave_makers) {
+            element.RELATED_MAKERS.erase(maker);
+
+            auto iter = m_elements.find(maker);
+
+            if(iter == m_elements.end()) {
+                continue;
+            }
+
+            ElementType &maker_element = iter->second;
+            maker_element.RELATED_WATCHERS.erase(key);
+        }
+
+        for(const KEY_TYPE &maker: enter_makers) {
+            element.RELATED_MAKERS.insert(maker);
+
+            auto iter = m_elements.find(maker);
+
+            if(iter == m_elements.end()) {
+                continue;
+            }
+
+            ElementType &maker_element = iter->second;
+
+            maker_element.RELATED_WATCHERS.insert(key);
+        }
+
+        if(leave_makers.size() || enter_makers.size()) {
+            AOI_EVENT_TYPE event;
+
+            event.EVENT_ID = AOI_EVENT_IDS::LEAVE;
+            for(const KEY_TYPE &maker: leave_makers) {
+                auto iter = m_elements.find(maker);
+
+                if(iter == m_elements.end()) {
+                    continue;
+                }
+
+                ElementType &maker_element = iter->second;
+                CopyPos(maker_element.POS, event.POS);
+                Callback(key, maker, event);
+            }
+
+            event.EVENT_ID = AOI_EVENT_IDS::ENTER;
+            for(const KEY_TYPE &maker: enter_makers) {
+                auto iter = m_elements.find(maker);
+
+                if(iter == m_elements.end()) {
+                    continue;
+                }
+
+                ElementType &maker_element = iter->second;
+                CopyPos(maker_element.POS, event.POS);
+                Callback(key, maker, event);
+            }
+        }
+    }
+
+    void MoveMaker(const KEY_TYPE &key, ElementType &element, const ElementType &old_element) {
+        
     }
 
     void DiffSortedKeylist(std::vector<KEY_TYPE> &leaves, std::vector<KEY_TYPE> &keeps, 

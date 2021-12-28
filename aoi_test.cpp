@@ -161,7 +161,7 @@ void TestInteractive() {
 
 void TestStress() {
     constexpr int DIMENSION = 2;
-    constexpr bool TEST_SELF = true;
+    constexpr bool TEST_SELF = false;
 
     long max_watch_range[DIMENSION];
     for(int i = 0; i < DIMENSION; ++i) {
@@ -170,10 +170,10 @@ void TestStress() {
 
     AoiGroup<unsigned, long, DIMENSION> group(max_watch_range);
     std::mt19937 rng;
-    rng.seed(time(NULL));
+    rng.seed(0x87654321);
 
     constexpr long pos_max = 2000;
-    constexpr unsigned id_max = 20000;
+    constexpr unsigned id_max = 10000;
 
     // 插入 id_max 个元素
     {
@@ -184,15 +184,15 @@ void TestStress() {
         for(unsigned id = 0; id < id_max; ++id) {
             long pos[DIMENSION];
             for(int i = 0; i < DIMENSION; ++i) {
-                pos[i] = (long)rng() % pos_max;
+                pos[i] = (long)(rng() % pos_max);
             }
             long watch_range[DIMENSION];
             for(int i = 0; i < DIMENSION; ++i) {
-                watch_range[i] = ((long)rng() % max_watch_range[i]) + 1;
+                watch_range[i] = ((long)(rng() % max_watch_range[i])) + 1;
             }
             inserted += group.Enter(id, pos, 3, watch_range) ? 1 : 0;
 
-            if(TEST_SELF && !group.TestSelf()) {
+            if(false && !group.TestSelf()) {
                 std::cout << "WARNING: TEST SELF FAILED" << "\n";
                 break;
             }
@@ -201,7 +201,7 @@ void TestStress() {
 
         std::cout << "finish insert elements: " << inserted << " COST_TIME=" << (double)tdiff / CLOCKS_PER_SEC << "\n";
     }
-
+    
     // 移动所有元素
     {
         std::cout << "begin move elements: " << id_max << "\n";
@@ -211,7 +211,7 @@ void TestStress() {
         for(unsigned id = 0; id < id_max; ++id) {
             long pos[DIMENSION];
             for(int i = 0; i < DIMENSION; ++i) {
-                pos[i] = (long)rng() % pos_max;
+                pos[i] = (long)(rng() % pos_max);
             }
             moved += group.Move(id, pos) ? 1 : 0;
 
@@ -234,7 +234,7 @@ void TestStress() {
         for(unsigned id = 0; id < id_max; ++id) {
             long diff[DIMENSION];
             for(int i = 0; i < DIMENSION; ++i) {
-                diff[i] = (long)rng() % 2;
+                diff[i] = (long)(rng() % 3) - 1;
             }
             shifted += group.MoveDiff(id, diff);
 
@@ -257,7 +257,7 @@ void TestStress() {
         for(unsigned id = 0; id < id_max; ++id) {
             deleted += group.Leave(id) ? 1 : 0;
 
-            if(TEST_SELF && !group.TestSelf()) {
+            if(false && !group.TestSelf()) {
                 std::cout << "WARNING: TEST SELF FAILED" << "\n";
                 break;
             }
@@ -288,21 +288,17 @@ void TestDebug() {
 
     long pos, watch_range;
 
-    pos = -10, watch_range = 14;
-    group.Enter(0, &pos, 3, &watch_range);
-    group.TestSelf();
+    pos = -38, watch_range = 20;
+    group.Enter(0, &pos, 1, &watch_range);
+    if(!group.TestSelf()) {std::cout << "WARNING: TEST SELF FAILED" << "\n";}
 
-    pos = -71,  watch_range = 0;
-    group.Enter(1, &pos, 3, &watch_range);
-    group.TestSelf();
+    pos = -18,  watch_range = 20;
+    group.Enter(1, &pos, 2, &watch_range);
+    if(!group.TestSelf()) {std::cout << "WARNING: TEST SELF FAILED" << "\n";}
 
-    pos = 85, watch_range = 6;
-    group.Enter(2, &pos, 3, &watch_range);
-    group.TestSelf();
-
-    pos = 0, watch_range = 3;
-    group.Enter(3, &pos, 3, &watch_range);
-    group.TestSelf();
+    pos = 1;
+    group.MoveDiff(0, &pos);
+    if(!group.TestSelf()) {std::cout << "WARNING: TEST SELF FAILED" << "\n";}
 }
 
 int main() {

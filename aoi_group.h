@@ -48,13 +48,14 @@ public:
     void *USERDATA = NULL;
 };
 
-template<typename KeyType, typename PosType, int Dimension>
+template<typename KeyType, typename PosType, int Dimension, bool NotifyMoveEvent = false>
 class AoiGroup {
 public:
     using KEY_TYPE = KeyType;
     using POS_TYPE = PosType;
     static constexpr int DIMENSION = Dimension;
     static constexpr POS_TYPE POS_ZERO = (POS_TYPE)0;
+    static constexpr bool NOTIFY_MOVE_EVENT = NotifyMoveEvent;
 
     using AOI_EVENT_TYPE = AoiEventType<KEY_TYPE, POS_TYPE, DIMENSION>;
     using EVENT_CALLBACK = typename std::function<void(const KEY_TYPE &receiver, const KEY_TYPE &sender, const AOI_EVENT_TYPE &event)>;
@@ -206,13 +207,25 @@ public:
 
         ElementType &element = iter->second;
 
-        POS_TYPE pos[DIMENSION];
-
-        for(int i = 0; i < DIMENSION; ++i) {
-            pos[i] = element.POS[i] + diff[i];
+        if(IsZeroPos(diff)) {
+            return true;
         }
 
-        return Move(key, pos);
+        ElementType old_element = element;
+        for(int i = 0; i < DIMENSION; ++i) {
+            element.POS[i] += diff[i];
+        }
+
+        int watch_type = element.WATCH_TYPE;
+        if(watch_type & AOI_WATCH_TYPES::MAKER) {
+            MoveMaker(key, element, old_element);
+        }
+
+        if(watch_type & AOI_WATCH_TYPES::WATCHER) {
+            MoveWatcher(key, element, old_element);
+        }
+
+        return true;
     }
 
     bool ChangeWatchType(const KEY_TYPE &key, int watch_type) {
@@ -359,7 +372,7 @@ public:
     }
 
     void GetMakersInRange(const POS_TYPE pos[DIMENSION], const POS_TYPE range[DIMENSION], std::vector<KEY_TYPE> &makers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0, const GetMakersInRangeHint *hint = NULL) {
-        static_assert(DIMENSION > 0);
+        static_assert(DIMENSION > 0, "DIMENSION should > 0");
         assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
         makers.clear();
 
@@ -438,7 +451,7 @@ public:
     }
 
     void GetWatchersRelatedToPos(const POS_TYPE pos[DIMENSION], std::vector<KEY_TYPE> &watchers, const KEY_TYPE *excludes_sorted = NULL, size_t excludes_size = 0, const GetWatchersRelatedToPosHint *hint = NULL) {
-        static_assert(DIMENSION > 0);
+        static_assert(DIMENSION > 0, "DIMENSION should > 0");
         assert(std::is_sorted(excludes_sorted, excludes_sorted + excludes_size));
         watchers.clear();
 
@@ -493,7 +506,7 @@ public:
     }
 
     void BroadcastEventToWatchersByPos(POS_TYPE pos[DIMENSION], const KEY_TYPE &sender, const AOI_EVENT_TYPE &event) {
-        std::vector<KEY_TYPE> &watchers;
+        std::vector<KEY_TYPE> watchers;
         GetWatchersRelatedToPos(pos, watchers);
 
         for(const KEY_TYPE &watcher: watchers) {
@@ -632,6 +645,15 @@ private:
 
     bool IsSamePos(const POS_TYPE x[DIMENSION], const POS_TYPE y[DIMENSION]) {
         return std::equal(x, x + DIMENSION, y);
+    }
+
+    bool IsZeroPos(const POS_TYPE x[DIMENSION]) {
+        for(int i = 0; i < DIMENSION; ++i) {
+            if(!(x[i] == POS_ZERO)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     void TrimWatchRange(POS_TYPE watch_range[DIMENSION]) {
@@ -837,7 +859,11 @@ private:
         // 这里 old_watchers 和 new_watchers 都是有序的，不需要再排序
         // 如果改动了代码，导致无序，那么需要在这里进行排序
 
-        DiffSortedKeylist(leave_watchers, keep_watchers, enter_watchers, old_watchers, new_watchers);
+        if(NOTIFY_MOVE_EVENT) {
+            DiffSortedKeylist(leave_watchers, keep_watchers, enter_watchers, old_watchers, new_watchers);
+        } else {
+            DiffSortedKeylist2(leave_watchers, enter_watchers, old_watchers, new_watchers);
+        }
 
         for(const KEY_TYPE &watcher: leave_watchers) {
             element.RELATED_WATCHERS.erase(watcher);
@@ -867,7 +893,7 @@ private:
             watcher_element.RELATED_MAKERS.insert(key);
         }
 
-        if(leave_watchers.size() || keep_watchers.size() || enter_watchers.size()) {
+        if(leave_watchers.size() || (NOTIFY_MOVE_EVENT && keep_watchers.size()) || enter_watchers.size()) {
             AOI_EVENT_TYPE event;
 
             CopyPos(element.POS, event.POS);
@@ -879,10 +905,12 @@ private:
                 Callback(watcher, key, event);
             }
 
-            event.EVENT_ID = AOI_EVENT_IDS::MOVE;
-            for(const KEY_TYPE &watcher: keep_watchers) {
-                // 通知watcher移动信息
-                Callback(watcher, key, event);
+            if(NOTIFY_MOVE_EVENT) {
+                event.EVENT_ID = AOI_EVENT_IDS::MOVE;
+                for(const KEY_TYPE &watcher: keep_watchers) {
+                    // 通知watcher移动信息
+                    Callback(watcher, key, event);
+                }
             }
 
             event.EVENT_ID = AOI_EVENT_IDS::ENTER;
@@ -952,7 +980,7 @@ private:
     }
 
     void CalcMoveWatcherHint(ElementType &element, const ElementType &old_element, MoveWatcherHint &hint) {
-        static_assert(DIMENSION > 0);
+        static_assert(DIMENSION > 0, "DIMENSION should > 0");
 
         // 不同维度各自计算，最后相加
         hint.COMPLEXITY = 0;
@@ -1294,7 +1322,7 @@ private:
     }
 
     void CalcMoveMakerHint(ElementType &element, const ElementType &old_element, MoveMakerHint &hint) {
-        static_assert(DIMENSION > 0);
+        static_assert(DIMENSION > 0, "DIMENSION should > 0");
 
         hint.COMPLEXITY = 0;
 
@@ -1546,7 +1574,11 @@ private:
             };
 
             if(i == enter_dimension) {
-                
+                if(old_element.POS[i] < element.POS[i]) {
+                    m_dimensions[i].WATCHER_LOWER_LIST.GetElementsByRangedValue(old_element.POS[i], true, element.POS[i], false, enter_cb);
+                } else {
+                    m_dimensions[i].WATCHER_UPPER_LIST.GetElementsByRangedValue(element.POS[i], false, old_element.POS[i], true, enter_cb);
+                }
             } else {
                 if(enter_use_lower) {
                     POS_TYPE lower_begin = element.POS[i] - m_max_watch_range[i] - m_max_watch_range[i];
@@ -1584,7 +1616,9 @@ private:
             watcher_element.RELATED_MAKERS.erase(key);
         }
 
-        keep_watchers.assign(element.RELATED_WATCHERS.begin(), element.RELATED_WATCHERS.end());
+        if(NOTIFY_MOVE_EVENT) {
+            keep_watchers.assign(element.RELATED_WATCHERS.begin(), element.RELATED_WATCHERS.end());
+        }
 
         for(const KEY_TYPE &watcher: enter_watchers) {
             element.RELATED_WATCHERS.insert(watcher);
@@ -1600,7 +1634,7 @@ private:
         }
 
         // notify
-        if(leave_watchers.size() || keep_watchers.size() || enter_watchers.size()) {
+        if(leave_watchers.size() || (NOTIFY_MOVE_EVENT && keep_watchers.size()) || enter_watchers.size()) {
             AOI_EVENT_TYPE event;
             
             CopyPos(element.POS, event.POS);
@@ -1611,9 +1645,11 @@ private:
                 Callback(watcher, key, event);
             }
 
-            event.EVENT_ID = AOI_EVENT_IDS::MOVE;
-            for(const KEY_TYPE &watcher: keep_watchers) {
-                Callback(watcher, key, event);
+            if(NOTIFY_MOVE_EVENT) {
+                event.EVENT_ID = AOI_EVENT_IDS::MOVE;
+                for(const KEY_TYPE &watcher: keep_watchers) {
+                    Callback(watcher, key, event);
+                }
             }
 
             event.EVENT_ID = AOI_EVENT_IDS::ENTER;
@@ -1636,6 +1672,36 @@ private:
                 ++oldid;
                 ++newid;
             } else if(old[oldid] < newl[newid]) {
+                leaves.emplace_back(old[oldid]);
+                ++oldid;
+            } else {
+                enters.emplace_back(newl[newid]);
+                ++newid;
+            }
+        }
+
+        while(oldid < oldlen) {
+            leaves.emplace_back(old[oldid]);
+            ++oldid;
+        }
+
+        while(newid < newlen) {
+            enters.emplace_back(newl[newid]);
+            ++newid;
+        }
+    }
+
+    void DiffSortedKeylist2(std::vector<KEY_TYPE> &leaves, std::vector<KEY_TYPE> &enters, const std::vector<KEY_TYPE> &old, const std::vector<KEY_TYPE> &newl) {
+        size_t oldlen = old.size();
+        size_t newlen = newl.size();
+
+        size_t oldid = 0, newid = 0;
+
+        while(oldid < oldlen && newid < newlen) {
+            if(old[oldid] == newl[newid]) {
+                ++oldid;
+                ++newid;
+            } else if (old[oldid] < newl[newid]) {
                 leaves.emplace_back(old[oldid]);
                 ++oldid;
             } else {

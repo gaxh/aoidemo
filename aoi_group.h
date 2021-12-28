@@ -58,9 +58,10 @@ public:
     static constexpr bool NOTIFY_MOVE_EVENT = NotifyMoveEvent;
 
     using AOI_EVENT_TYPE = AoiEventType<KEY_TYPE, POS_TYPE, DIMENSION>;
-    using EVENT_CALLBACK = typename std::function<void(const KEY_TYPE &receiver, const KEY_TYPE &sender, const AOI_EVENT_TYPE &event)>;
+    using EVENT_CALLBACK = typename std::function<void(unsigned long id, const KEY_TYPE &receiver, const KEY_TYPE &sender, const AOI_EVENT_TYPE &event)>;
 
 private:
+    unsigned long m_id;
     EVENT_CALLBACK m_eventcb = NULL;
     POS_TYPE m_max_watch_range[DIMENSION];
 
@@ -107,7 +108,7 @@ private:
     };
 
 public:
-    AoiGroup(const POS_TYPE max_watch_range[DIMENSION]) {
+    AoiGroup(unsigned long id, const POS_TYPE max_watch_range[DIMENSION]) : m_id(id) {
         for(int i = 0; i < DIMENSION; ++i) {
             assert(POS_ZERO < max_watch_range[i]);
         }
@@ -117,6 +118,10 @@ public:
 
     void SetCallback(EVENT_CALLBACK cb) {
         m_eventcb = cb;
+    }
+
+    unsigned long Id() {
+        return m_id;
     }
 
     bool Enter(const KEY_TYPE &key, const POS_TYPE pos[DIMENSION], int watch_type, const POS_TYPE watch_range[DIMENSION]) {
@@ -635,7 +640,7 @@ public:
 private:
     void Callback(const KEY_TYPE &receiver, const KEY_TYPE &sender, const AOI_EVENT_TYPE &event) {
         if(m_eventcb) {
-            m_eventcb(receiver, sender, event);
+            m_eventcb(m_id, receiver, sender, event);
         }
     }
 

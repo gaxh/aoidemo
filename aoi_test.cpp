@@ -64,10 +64,10 @@ void TestInteractive() {
         max_watch_range[i] = 20;
     }
 
-    AoiGroup<unsigned, long, DIMENSION> group(max_watch_range);
+    AoiGroup<unsigned, long, DIMENSION> group(999, max_watch_range);
 
-    group.SetCallback([](unsigned receiver, unsigned sender, AoiGroup<unsigned, long, DIMENSION>::AOI_EVENT_TYPE event){
-                std::cout << "* EVENT=" << AoiEventIdRepr(event.EVENT_ID) << " ";
+    group.SetCallback([](unsigned long id, unsigned receiver, unsigned sender, AoiGroup<unsigned, long, DIMENSION>::AOI_EVENT_TYPE event){
+                std::cout << "* FROM=" << id << " EVENT=" << AoiEventIdRepr(event.EVENT_ID) << " ";
                 std::cout << "RECEIVER=" << receiver << " ";
                 std::cout << "SENDER=" << sender << " ";
                 std::cout << "POS=(";
@@ -168,12 +168,13 @@ void TestStress() {
         max_watch_range[i] = 20;
     }
 
-    AoiGroup<unsigned, long, DIMENSION> group(max_watch_range);
+    AoiGroup<unsigned, long, DIMENSION> group(999, max_watch_range);
     std::mt19937 rng;
     rng.seed(0x87654321);
 
-    constexpr long pos_max = 2000;
+    constexpr long pos_max = 1000;
     constexpr unsigned id_max = 10000;
+    constexpr unsigned move_op = 10000;
 
     // 插入 id_max 个元素
     {
@@ -208,7 +209,7 @@ void TestStress() {
 
         unsigned moved = 0;
         clock_t tbegin = clock();
-        for(unsigned id = 0; id < id_max; ++id) {
+        for(unsigned id = 0; id < move_op && id < id_max; ++id) {
             long pos[DIMENSION];
             for(int i = 0; i < DIMENSION; ++i) {
                 pos[i] = (long)(rng() % pos_max);
@@ -231,7 +232,7 @@ void TestStress() {
 
         unsigned shifted = 0;
         clock_t tbegin = clock();
-        for(unsigned id = 0; id < id_max; ++id) {
+        for(unsigned id = 0; id < move_op && id < id_max; ++id) {
             long diff[DIMENSION];
             for(int i = 0; i < DIMENSION; ++i) {
                 diff[i] = (long)(rng() % 3) - 1;
@@ -282,7 +283,7 @@ void TestDebug() {
         max_watch_range[i] = 20;
     }
 
-    AoiGroup<unsigned, long, DIMENSION> group(max_watch_range);
+    AoiGroup<unsigned, long, DIMENSION> group(999, max_watch_range);
     std::mt19937 rng;
     rng.seed(time(NULL));
 
